@@ -1,0 +1,339 @@
+################################################################################
+################################################################################
+#################### Code to analyze political polarization ####################
+################################################################################
+################################################################################
+library(dplyr)
+library(ggplot2)
+library(rstan)
+library(stargazer)
+library(jtools)
+options(mc.cores = parallel::detectCores())
+rm(list=ls())
+## load data
+panel_data_ZU <- read.csv("DL-Daten V1.0.csv", sep = ";")
+load("Thetas for parties in IRT model.rda")
+load("discrimination for politicians and DD objects.rda")
+
+
+
+
+panel_data_ZU <- panel_data_ZU[panel_data_ZU$F05>0 & panel_data_ZU$F05<20 & panel_data_ZU$R03>0 & panel_data_ZU$R03<20, ]
+panel_data_ZU <- panel_data_ZU[is.na(panel_data_ZU$F05)==F & is.na(panel_data_ZU$R03)==F,]
+
+panel_data_ZU <- panel_data_ZU %>%
+  mutate(NR_1 = ifelse(F05>=1 & F05<20, F05, NA),
+         NR_2 = ifelse(R03>=1 & R03<20, F05, NA),
+         NR_1.SVP = ifelse(F05==1, 1, 0),
+         NR_1.SP = ifelse(F05==2, 1, 0),
+         NR_1.FDP = ifelse(F05==3, 1, 0),
+         NR_1.Grune = ifelse(F05==4, 1, 0),
+         NR_1.CVP = ifelse(F05==5, 1, 0),
+         NR_1.GLP = ifelse(F05==6, 1, 0),
+         NR_1.EVP = ifelse(F05==7, 1, 0),
+         NR_1.BDP = ifelse(F05==8, 1, 0),
+         NR_1.EDU = ifelse(F05==9, 1, 0),
+         NR_1.AL = ifelse(F05==10, 1, 0),
+         NR_2.SVP = ifelse(R03==1, 1, 0),
+         NR_2.SP = ifelse(R03==2, 1, 0),
+         NR_2.FDP = ifelse(R03==3, 1, 0),
+         NR_2.Grune = ifelse(R03==4, 1, 0),
+         NR_2.CVP = ifelse(R03==5, 1, 0),
+         NR_2.GLP = ifelse(R03==6, 1, 0),
+         NR_2.EVP = ifelse(R03==7, 1, 0),
+         NR_2.BDP = ifelse(R03==8, 1, 0),
+         NR_2.EDU = ifelse(R03==9, 1, 0),
+         NR_2.AL = ifelse(R03==10, 1, 0),
+         NR_val_1.SVP = NR_1.SVP * thetas[thetas$Party=="SVP",]$summary.50.,
+         NR_val_1.SP = NR_1.SP * thetas[thetas$Party=="SP",]$summary.50.,,
+         NR_val_1.FDP = NR_1.FDP * thetas[thetas$Party=="FDP",]$summary.50.,
+         NR_val_1.Grune = NR_1.Grune * thetas[thetas$Party=="GPS",]$summary.50.,,
+         NR_val_1.CVP = NR_1.CVP * thetas[thetas$Party=="CVP",]$summary.50.,
+         NR_val_1.GLP = NR_1.GLP * thetas[thetas$Party=="GLP",]$summary.50.,
+         NR_val_1.EVP = NR_1.EVP * thetas[thetas$Party=="EVP",]$summary.50.,
+         NR_val_1.BDP = NR_1.BDP * thetas[thetas$Party=="BDP",]$summary.50.,
+         NR_val_1.EDU = NR_1.EDU * thetas[thetas$Party=="EDU",]$summary.50.,
+         NR_val_1.AL = NR_1.AL * thetas[thetas$Party=="PdA",]$summary.50.,
+         NR_val_2.SVP = NR_2.SVP * thetas[thetas$Party=="SVP",]$summary.50.,
+         NR_val_2.SP = NR_2.SP * thetas[thetas$Party=="SP",]$summary.50.,,
+         NR_val_2.FDP = NR_2.FDP * thetas[thetas$Party=="FDP",]$summary.50.,
+         NR_val_2.Grune = NR_2.Grune * thetas[thetas$Party=="GPS",]$summary.50.,,
+         NR_val_2.CVP = NR_2.CVP * thetas[thetas$Party=="CVP",]$summary.50.,
+         NR_val_2.GLP = NR_2.GLP * thetas[thetas$Party=="GLP",]$summary.50.,
+         NR_val_2.EVP = NR_2.EVP * thetas[thetas$Party=="EVP",]$summary.50.,
+         NR_val_2.BDP = NR_2.BDP * thetas[thetas$Party=="BDP",]$summary.50.,
+         NR_val_2.EDU = NR_2.EDU * thetas[thetas$Party=="EDU",]$summary.50.,
+         NR_val_2.AL = NR_2.AL * thetas[thetas$Party=="PdA",]$summary.50.,
+         NR_val_1 = (NR_val_1.SVP + NR_val_1.SP + NR_val_1.FDP + NR_val_1.Grune + NR_val_1.CVP +
+                       NR_val_1.GLP + NR_val_1.EVP + NR_val_1.BDP + NR_val_1.EDU + NR_val_1.AL),
+         NR_val_2 = (NR_val_2.SVP + NR_val_2.SP + NR_val_2.FDP + NR_val_2.Grune + NR_val_2.CVP +
+                       NR_val_2.GLP + NR_val_2.EVP + NR_val_2.BDP + NR_val_2.EDU + NR_val_2.AL),
+         ST_1.1 = ifelse(F06_01==1, 1, ifelse(F06_01==0, 0, NA)),
+         ST_1.2 = ifelse(F06_02==1, 1, ifelse(F06_02==0, 0, NA)),
+         ST_1.3 = ifelse(F06_03==1, 1, ifelse(F06_03==0, 0, NA)),
+         ST_1.4 = ifelse(F06_04==1, 1, ifelse(F06_04==0, 0, NA)),
+         ST_1.5 = ifelse(F06_05==1, 1, ifelse(F06_05==0, 0, NA)),
+         ST_1.6 = ifelse(F06_06==1, 1, ifelse(F06_06==0, 0, NA)),
+         ST_1.7 = ifelse(F06_07==1, 1, ifelse(F06_07==0, 0, NA)),
+         ST_1.8 = ifelse(F06_08==1, 1, ifelse(F06_08==0, 0, NA)),
+         ST_1.9 = ifelse(F06_09==1, 1, ifelse(F06_09==0, 0, NA)),
+         ST_1.10 = ifelse(F06_10==1, 1, ifelse(F06_10==0, 0, NA)),
+         ST_1.11 = ifelse(F06_11==1, 1, ifelse(F06_11==0, 0, NA)),
+         ST_1.12 = ifelse(F06_12==1, 1, ifelse(F06_12==0, 0, NA)),
+         ST_1.13 = ifelse(F06_13==1, 1, ifelse(F06_13==0, 0, NA)),
+         ST_1_all = (ST_1.1 + ST_1.2 + ST_1.3 + ST_1.4 + ST_1.5 + ST_1.6 + ST_1.7 +
+                       ST_1.8 + ST_1.9 + ST_1.10 + ST_1.11 + ST_1.12 + ST_1.13),
+         ST_1_all = ifelse(ST_1_all>0, ST_1_all, NA),
+         ST_1_val.1 = ST_1.1 * betas[1,]$c_summary.50..chain.1,
+         ST_1_val.2 = ST_1.2 * betas[2,]$c_summary.50..chain.1,
+         ST_1_val.3 = ST_1.3 * betas[3,]$c_summary.50..chain.1,
+         ST_1_val.4 = ST_1.4 * betas[4,]$c_summary.50..chain.1,
+         ST_1_val.5 = ST_1.5 * betas[5,]$c_summary.50..chain.1,
+         ST_1_val.6 = ST_1.6 * betas[6,]$c_summary.50..chain.1,
+         ST_1_val.7 = ST_1.7 * betas[7,]$c_summary.50..chain.1,
+         ST_1_val.8 = ST_1.8 * betas[8,]$c_summary.50..chain.1,
+         ST_1_val.9 = ST_1.9 * betas[9,]$c_summary.50..chain.1,
+         ST_1_val.10 = ST_1.10 * betas[10,]$c_summary.50..chain.1,
+         ST_1_val.11 = ST_1.11 * betas[11,]$c_summary.50..chain.1,
+         ST_1_val.12 = ST_1.12 * betas[12,]$c_summary.50..chain.1,
+         ST_1_val.13 = ST_1.13 * betas[13,]$c_summary.50..chain.1,
+         ST_1_val_all = (ST_1_val.1 + ST_1_val.2 + ST_1_val.3 + ST_1_val.4 + ST_1_val.5 + ST_1_val.6 + ST_1_val.7 +
+                           ST_1_val.8 + ST_1_val.9 + ST_1_val.10 + ST_1_val.11 + ST_1_val.12 + ST_1_val.13)/ST_1_all,
+         ST_2.1 = ifelse(R0201==1, 1, ifelse(R0201==0, 0, NA)),
+         ST_2.2 = ifelse(R0202==1, 1, ifelse(R0202==0, 0, NA)),
+         ST_2.3 = ifelse(R0203==1, 1, ifelse(R0203==0, 0, NA)),
+         ST_2.4 = ifelse(R0204==1, 1, ifelse(R0204==0, 0, NA)),
+         ST_2.5 = ifelse(R0205==1, 1, ifelse(R0205==0, 0, NA)),
+         ST_2.6 = ifelse(R0206==1, 1, ifelse(R0206==0, 0, NA)),
+         ST_2.7 = ifelse(R0207==1, 1, ifelse(R0207==0, 0, NA)),
+         ST_2.8 = ifelse(R0208==1, 1, ifelse(R0208==0, 0, NA)),
+         ST_2.9 = ifelse(R0209==1, 1, ifelse(R0209==0, 0, NA)),
+         ST_2.10 = ifelse(R0210==1, 1, ifelse(R0210==0, 0, NA)),
+         ST_2.11 = ifelse(R0211==1, 1, ifelse(R0211==0, 0, NA)),
+         ST_2.12 = ifelse(R0212==1, 1, ifelse(R0212==0, 0, NA)),
+         ST_2.13 = ifelse(R0213==1, 1, ifelse(R0213==0, 0, NA)),
+         ST_2_all = (ST_2.1 + ST_2.2 + ST_2.3 + ST_2.4 + ST_2.5 + ST_2.6 + ST_2.7 +
+                       ST_2.8 + ST_2.9 + ST_2.10 + ST_2.11 + ST_2.12 + ST_2.13),
+         ST_2_all = ifelse(ST_2_all>0, ST_2_all, NA),
+         ST_2_val.1 = ST_2.1 * betas[1,]$c_summary.50..chain.1,
+         ST_2_val.2 = ST_2.2 * betas[2,]$c_summary.50..chain.1,
+         ST_2_val.3 = ST_2.3 * betas[3,]$c_summary.50..chain.1,
+         ST_2_val.4 = ST_2.4 * betas[4,]$c_summary.50..chain.1,
+         ST_2_val.5 = ST_2.5 * betas[5,]$c_summary.50..chain.1,
+         ST_2_val.6 = ST_2.6 * betas[6,]$c_summary.50..chain.1,
+         ST_2_val.7 = ST_2.7 * betas[7,]$c_summary.50..chain.1,
+         ST_2_val.8 = ST_2.8 * betas[8,]$c_summary.50..chain.1,
+         ST_2_val.9 = ST_2.9 * betas[9,]$c_summary.50..chain.1,
+         ST_2_val.10 = ST_2.10 * betas[10,]$c_summary.50..chain.1,
+         ST_2_val.11 = ST_2.11 * betas[11,]$c_summary.50..chain.1,
+         ST_2_val.12 = ST_2.12 * betas[12,]$c_summary.50..chain.1,
+         ST_2_val.13 = ST_2.13 * betas[13,]$c_summary.50..chain.1,
+         ST_2_val_all = (ST_2_val.1 + ST_2_val.2 + ST_2_val.3 + ST_2_val.4 + ST_2_val.5 + ST_2_val.6 + ST_2_val.7 +
+                           ST_2_val.8 + ST_2_val.9 + ST_2_val.10 + ST_2_val.11 + ST_2_val.12 + ST_2_val.13)/ST_2_all,
+         
+         pop.vote.1 = ifelse(F11_01==1, 1, ifelse(F11_01==2, 0, NA)),
+         pop.vote.2 = ifelse(F11_02==1, 1, ifelse(F11_02==2, 0, NA)),
+         pop.vote.3 = ifelse(F11_03==1, 1, ifelse(F11_03==2, 0, NA)),
+         pop.vote.4 = ifelse(F11_04==1, 1, ifelse(F11_04==2, 0, NA)),
+         Newspaper = ifelse(R1601==1, 1, ifelse(R1601==0, 0, NA)),
+         TV = ifelse(R1602==1, 1, ifelse(R1602==0, 0, NA)),
+         Radio = ifelse(R1603==1, 1, ifelse(R1603==0, 0, NA)),
+         potcast = ifelse(R1604==1, 1, ifelse(R1604==0, 0, NA)),
+         OnlineHelp = ifelse(R1605==1, 1, ifelse(R1605==0, 0, NA)),
+         WebsiteParty = ifelse(R1606==1, 1, ifelse(R1606==0, 0, NA)),
+         FlyerParty = ifelse(R1607==1, 1, ifelse(R1607==0, 0, NA)),
+         PodiumParty = ifelse(R1608==1, 1, ifelse(R1608==0, 0, NA)),
+         ContactParty = ifelse(R1609==1, 1, ifelse(R1609==0, 0, NA)),
+         TalkFamily = ifelse(R1610==1, 1, ifelse(R1610==0, 0, NA)),
+         TalkWorkSchool = ifelse(R1611==1, 1, ifelse(R1611==0, 0, NA)),
+         
+         
+         Blogs = ifelse(R170101==1 | R180101==1| R170102==1|R180102==1, 1, 0),
+         web_forum = ifelse(R170201==1 | R180201==1| R170202==1|R180202==1, 1, 0),
+         Email = ifelse(R170301==1 | R180301==1| R170302==1|R180302==1, 1, 0),
+         Messenger = ifelse(R170401==1 | R180401==1| R170402==1|R180402==1, 1, 0),
+         Social_media = ifelse(R170501==1 | R180501==1| R170502==1|R180502==1, 1, 0),
+         Online_zeitung = ifelse(R170601==1 | R180601==1| R170602==1|R180602==1, 1, 0),
+         diff_NR = abs(NR_val_2) - abs(NR_val_1),
+         diff_ST = abs(ST_2_val_all) - abs(ST_1_val_all),
+         change_NR = ifelse(F05==R03, 0, 1),
+         change_ST = ifelse(F06_01==R0201 & F06_02==R0202 & F06_03==R0203 & F06_04==R0204 & F06_05==R0205 & 
+                              F06_06==R0206 & F06_07==R0207 & F06_08==R0208 & F06_09==R0209 & F06_10==R0210 & 
+                              F06_11==R0211 & F06_12==R0212 & F06_13==R0213, 0, 1),
+         ST_1_val_all_abs = abs(ST_1_val_all),
+         NR_1_val_abs = abs(NR_val_1),
+         ST_2_val_all_abs = abs(ST_2_val_all),
+         NR_2_val_abs = abs(NR_val_2),
+         diff_all = diff_ST + diff_NR,
+         all_val_abs = NR_1_val_abs + ST_1_val_all_abs)
+
+
+
+panel_data_ZU_left_ST <- panel_data_ZU[panel_data_ZU$ST_1_val_all>0,]==T
+
+
+table(panel_data_ZU$diff_ST)
+
+panel_data_ZU <- panel_data_ZU[panel_data_ZU$ST_1_all!=0,]
+panel_data_ZU <- panel_data_ZU[panel_data_ZU$ST_2_all!=0,]
+
+model_NR <- lm(diff_NR ~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                 ContactParty + NR_1_val_abs, data = panel_data_ZU)
+summary(model_NR)
+
+
+model_NR_changeOnly <- lm(diff_NR ~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                            ContactParty + NR_1_val_abs, 
+                          data = panel_data_ZU[panel_data_ZU$change_NR==1,])
+summary(model_NR_changeOnly)
+
+
+model_ST <- lm(diff_ST ~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                 ContactParty + ST_1_val_all_abs, data = panel_data_ZU)
+summary(model_ST)
+
+
+model_ST_changeOnly <- lm(diff_ST ~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                            ContactParty + ST_1_val_all_abs, 
+                          data = panel_data_ZU[panel_data_ZU$change_ST==1,])
+summary(model_ST_changeOnly)
+
+
+model_all <- lm(diff_all~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                 ContactParty + all_val_abs, data = panel_data_ZU)
+summary(model_all)
+
+
+model_all_changeOnly <- lm(diff_all ~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                            ContactParty + all_val_abs, 
+                          data = panel_data_ZU[panel_data_ZU$diff_all!=0,])
+summary(model_all_changeOnly)
+
+
+model_online_NR <- lm(diff_NR ~ Blogs + web_forum + Email + Messenger + Social_media + Online_zeitung + NR_1_val_abs, 
+                      data = panel_data_ZU)
+summary(model_online_NR) 
+
+model_online_NR_changeOnly <- lm(diff_NR ~ Blogs + web_forum + Email + Messenger + Social_media + Online_zeitung + NR_1_val_abs, 
+                      data = panel_data_ZU[panel_data_ZU$change_NR==1,])
+summary(model_online_NR) 
+
+model_NR_online_offline <- lm(diff_NR ~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                                ContactParty + Blogs + web_forum + Email + Messenger + Social_media + Online_zeitung + NR_1_val_abs, data = panel_data_ZU)
+summary(model_ST)
+
+
+model_online_ST <- lm(diff_ST ~ Blogs + web_forum + Email + Messenger + Social_media + Online_zeitung + ST_1_val_all_abs, 
+                      data = panel_data_ZU)
+summary(model_online_ST) 
+
+model_online_ST_changeOnly <- lm(diff_ST ~ Blogs + web_forum + Email + Messenger + Social_media + Online_zeitung + ST_1_val_all_abs, 
+                      data = panel_data_ZU[panel_data_ZU$change_ST==1,])
+summary(model_online_ST_changeOnly) 
+
+model_ST_online_offline <- lm(diff_ST ~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                 ContactParty + Blogs + web_forum + Email + Messenger + Social_media + Online_zeitung + ST_1_val_all_abs, data = panel_data_ZU)
+summary(model_ST)
+
+
+model_all_online <- lm(diff_all~ Blogs + web_forum + Email + Messenger + Social_media + Online_zeitung +
+                         all_val_abs, data = panel_data_ZU)
+
+model_all_online_offline <- lm(diff_all~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                  ContactParty + Blogs + web_forum + Email + Messenger + Social_media + Online_zeitung + all_val_abs, data = panel_data_ZU)
+
+lm(diff_NR ~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+     ContactParty + NR_1_val_abs, 
+   data = panel_data_ZU[panel_data_ZU$change_NR==1,])
+
+
+mean(panel_data_ZU$Newspaper, na.rm = T)
+mean(panel_data_ZU$TV, na.rm = T)
+mean(panel_data_ZU$Radio, na.rm = T)
+mean(panel_data_ZU$WebsiteParty, na.rm = T)
+mean(panel_data_ZU$FlyerParty, na.rm = T)
+mean(panel_data_ZU$PodiumParty, na.rm = T)
+mean(panel_data_ZU$ContactParty, na.rm = T)
+
+
+png(filename= "Polarization of respondents in government election.png", width = 2500, height = 2000, res = 300)
+hist(panel_data_ZU$diff_ST, nclass = 50, main = "Vote choice polarization of survey respondents in the government's election",
+     xlab = "Respondents' polarization")
+dev.off()
+
+
+png(filename= "Polarization of respondents in party choice for parliament's election.png", width = 2500, height = 2000, res = 300)
+hist(panel_data_ZU$diff_NR, nclass = 50, main = "Vote choice polarization of survey respondents in the parliament's election",
+     xlab = "Respondents' polarization")
+dev.off()
+
+
+ggplot(panel_data_ZU, aes(x= diff_ST, y = 1))+ 
+  geom_histogram(stat = "identity")
+dev.off()
+
+
+stargazer(model_NR, model_online_NR, model_NR_online_offline, model_ST, model_online_ST, model_ST_online_offline, 
+          star.char = c("+", "*", "**", "***"),
+          star.cutoffs = c(.1, .05, .01, .001))
+
+stargazer(model_all,model_all_online, model_all_online_offline,
+          star.char = c("+", "*", "**", "***"),
+          star.cutoffs = c(.1, .05, .01, .001))
+
+
+png(filename = "Models estimates.png", width = 2000, height = 3000, res = 300)
+plot_summs(model_NR, model_online_NR, model_NR_online_offline, model_ST, model_online_ST, model_ST_online_offline,
+           omit.coefs = c("(Intercept)", "ST_1_val_all_abs", "all_val_abs", "NR_1_val_abs"),
+           model.names = c("Parl.Trad. media", "Parl. online media", "Parl. both",
+                           "Gov.Trad. media", "Gov. online media", "Gov. both"))+
+  scale_color_manual(values = c("blue", "blue", "blue",  
+                                "red", "red", "red"))+
+  scale_shape_manual(values = c(1, 2, 4, 1, 2, 4))+ theme(legend.position = "bottom")
+dev.off()
+
+
+
+################### Additional analyses #################################
+
+colnames(panel_data_ZU)
+
+
+panel_left_ST <- panel_data_ZU[panel_data_ZU$ST_1_val_all>0 & panel_data_ZU$ST_2_val_all>0,]
+panel_right_ST <- panel_data_ZU[panel_data_ZU$ST_1_val_all<0 & panel_data_ZU$ST_2_val_all<0,]
+
+model_left <- lm(diff_ST ~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                   ContactParty + Blogs + web_forum + Email + Messenger + Social_media + Online_zeitung  + ST_1_val_all_abs, data = panel_left_ST)
+
+model_right <- lm(diff_ST ~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                    ContactParty + Blogs + web_forum + Email + Messenger + Social_media + Online_zeitung + ST_1_val_all_abs, data = panel_right_ST)
+png(filename = "Models left-right.png", width = 2000, height = 3000, res = 300)
+plot_summs(model_left, model_right,
+           omit.coefs = c("(Intercept)", "ST_1_val_all_abs"),
+           model.names = c("Left voters", "Right voter"),
+           point.shape = F, colors = c("blue", "red"))+
+  scale_fill_manual(values = c("red",   
+                                "blue")) + 
+  theme(legend.position = "bottom")
+dev.off()
+
+model_extrem <- lm(ST_2_val_all_abs ~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                     ContactParty + Blogs + web_forum + Email + Messenger + Social_media + Online_zeitung, data = panel_data_ZU)
+model_extrem_left <- lm(ST_2_val_all_abs ~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                     ContactParty + Blogs + web_forum + Email + Messenger + Social_media + Online_zeitung, data = panel_left_ST)
+model_extrem_right <- lm(ST_2_val_all_abs ~ Newspaper + TV + Radio + WebsiteParty + FlyerParty + PodiumParty + 
+                     ContactParty + Blogs + web_forum + Email + Messenger + Social_media + Online_zeitung, data = panel_right_ST)
+
+
+
+png(filename = "Models extreme.png", width = 2000, height = 3000, res = 300)
+plot_summs(model_extrem, model_extrem_left, model_extrem_right, 
+           omit.coefs = c("(Intercept)"),
+           model.names = c("All voters", "Left voters", "Right voters"),
+           point.shape = F, colors = c("grey",   
+                                       "blue", "red")) + 
+  scale_fill_manual(values = c("red",   
+                                "blue", "grey")) + 
+  theme(legend.position = "bottom")
+dev.off()
+
